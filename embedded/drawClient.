@@ -46,26 +46,20 @@ def on_message(topic, msg):
     """Handle incoming MQTT messages."""
     topic = topic.decode()
     print("Message received on topic: {}".format(topic))
-    print("Raw message: {}".format(msg))  # Print raw message for debugging
+    print("Raw message: {}".format(msg))  # Debugging raw MQTT message
 
     try:
-        msg_decoded = msg.decode()  # Ensure it's decoded properly
+        msg_decoded = msg.decode("utf-8").strip()  # Ensure string format
         print("Decoded message: {}".format(msg_decoded))  # Debug decoded message
-        
-        data = ujson.loads(msg_decoded)  # Attempt to parse JSON
-        
-        if topic == DRAW_TOPIC:
-            if len(data) != 5:
-                print("Invalid message format. Expected [x, y, r, g, b].")
-                return
+
+        # Parse JSON properly
+        data = ujson.loads(msg_decoded)
+
+        if isinstance(data, list) and len(data) == 5:
             x, y, r, g, b = data
             draw_pixel(x % 5, y % 5, r, g, b)
-        
-        elif topic == CONNECT_TOPIC:
-            sync_display()
-
         else:
-            print("Unknown topic: {}".format(topic))
+            print("Error: Received data is not in expected [x, y, r, g, b] format")
 
     except Exception as e:
         print("Error processing message: {}".format(e))
