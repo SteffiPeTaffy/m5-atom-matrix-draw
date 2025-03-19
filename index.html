@@ -122,17 +122,21 @@
         }
 
         function sendMessage(x, y, color) {
-            let payload = new Uint8Array(5);
-            payload[0] = x;
-            payload[1] = y;
-            payload[2] = parseInt(color.substr(1, 2), 16);
-            payload[3] = parseInt(color.substr(3, 2), 16);
-            payload[4] = parseInt(color.substr(5, 2), 16);
+            let message = JSON.stringify([
+                x,
+                y,
+                parseInt(color.substr(1, 2), 16), // Red
+                parseInt(color.substr(3, 2), 16), // Green
+                parseInt(color.substr(5, 2), 16)  // Blue
+            ]);
 
-            let message = new Paho.MQTT.Message(payload);
-            message.destinationName = drawTopic;
-            client.send(message);
+            let mqttMessage = new Paho.MQTT.Message(message);
+            mqttMessage.destinationName = drawTopic;
+            client.send(mqttMessage);
+
+            console.log("Sent JSON:", message); // Debugging output
         }
+
 
         function draw({ x, y }) {
             let color = document.getElementById("draw_color").value;
