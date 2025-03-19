@@ -1,122 +1,96 @@
-#include <M5Atom.h>
-#include <PubSubClient.h>
-#include <HTTPUpdate.h>
+import network
+import time
+import ubinascii
+import machine
+import neopixel
+import ujson
+from umqtt.simple import MQTTClient
+import urequests
 
-const char* MQTT_SERVER = "broker.emqx.io";
-const uint16_t MQTT_PORT = 1883;
+# MQTT Settings
+MQTT_BROKER = "broker.emqx.io"
+MQTT_PORT = 1883
+CLIENT_ID = ubinascii.hexlify(machine.unique_id()).decode()
+DRAW_TOPIC = "steffiPeTaffy/draw"
+CONNECT_TOPIC = "steffiPeTaffy/draw/connect"
+UPDATE_TOPIC = "steffiPeTaffy/draw/update"
 
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
-String clientId;
+# Neopixel Setup (M5 Atom Matrix has 5x5 LEDs)
+PIXEL_COUNT = 25  # 5x5 matrix
+PIXEL_PIN = 27  # GPIO pin for M5 Atom Matrix LED
+np = neopixel.NeoPixel(machine.Pin(PIXEL_PIN), PIXEL_COUNT)
+pixel_data = [[(0, 0, 0) for _ in range(5)] for _ in range(5)]  # 5x5 Grid
 
-const char DRAW_TOPIC[] = "steffiPeTaffy/draw";
-const char CONNECT_TOPIC[] = "steffiPeTaffy/draw/connect";
-const char UPDATE_TOPIC[] = "steffiPeTaffy/draw/update";
+# MQTT Client
+mqtt_client = MQTTClient(CLIENT_ID, MQTT_BROKER, MQTT_PORT)
 
-uint8_t data[5][5][3] = {0}; // Adjusted for 5x5 matrix
+def draw_pixel(x, y, r, g, b):
+    """Draw a pixel on the 5x5 LED matrix."""
+    if 0 <= x < 5 and 0 <= y < 5:
+        index = x + y * 5  # Convert (x, y) to 1D index
+        np[index] = (r, g, b)
+        np.write()  # Update display
+        pixel_data[x][y] = (r, g, b)
 
-void setup() {
-    M5.begin(true, false, true);
-    Serial.begin(115200);
+def sync_display():
+    """Sync stored pixel data to MQTT broker."""
+    for x in range(5):
+        for y in range(5):
+            r, g, b = pixel_data[x][y]
+            if (r, g, b) != (0, 0, 0):  # Only send non-black pixels
+                msg = ujson.dumps([x, y, r, g, b])
+                mqtt_client.publish(DRAW_TOPIC, msg)
+    print("Display synced.")
 
-    M5.dis.fillpix(0x000000); // Clear Matrix
-    M5.dis.show();
+def on_message(topic, msg):
+    """Handle incoming MQTT messages."""
+    topic = topic.decode()
+    print("Message received on topic: {}".format(topic))
+    print("Raw message: {}".format(msg))  # Print raw message for debugging
 
-    clientId = "M5AtomClient-" + String(random(0xffff), HEX);
+    try:
+        msg_decoded = msg.decode()  # Ensure it's decoded properly
+        print("Decoded message: {}".format(msg_decoded))  # Debug decoded message
+        
+        data = ujson.loads(msg_decoded)  # Attempt to parse JSON
+        
+        if topic == DRAW_TOPIC:
+            if len(data) != 5:
+                print("Invalid message format. Expected [x, y, r, g, b].")
+                return
+            x, y, r, g, b = data
+            draw_pixel(x % 5, y % 5, r, g, b)
+        
+        elif topic == CONNECT_TOPIC:
+            sync_display()
 
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-    mqttClient.setCallback(callback);
-}
+        else:
+            print("Unknown topic: {}".format(topic))
 
-void sync() {
-    Serial.println("Syncing...");
-    uint8_t payload[5];
+    except Exception as e:
+        print("Error processing message: {}".format(e))
 
-    for (uint8_t x = 0; x < 5; x++) {
-        for (uint8_t y = 0; y < 5; y++) {
-            if (data[x][y][0] == 0 && data[x][y][1] == 0 && data[x][y][2] == 0) continue;
-            
-            payload[0] = x;
-            payload[1] = y;
-            payload[2] = data[x][y][0];
-            payload[3] = data[x][y][1];
-            payload[4] = data[x][y][2];
-            mqttClient.publish(DRAW_TOPIC, payload, sizeof(payload));
-        }
-    }
-}
 
-void callback(char* topic, byte* message, unsigned int length) {
-    Serial.print("Message received on topic: ");
-    Serial.println(topic);
+def connect_mqtt():
+    """Connect to MQTT broker and subscribe to topics."""
+    mqtt_client.set_callback(on_message)
+    mqtt_client.connect()
+    mqtt_client.subscribe(DRAW_TOPIC)
+    mqtt_client.subscribe(CONNECT_TOPIC)
+    mqtt_client.subscribe(UPDATE_TOPIC)
+    print("Connected to MQTT and subscribed to topics.")
 
-    if (strcmp(topic, DRAW_TOPIC) == 0) {
-        if (length != 5) {
-            Serial.print("Invalid message length: ");
-            Serial.println(length);
-            return;
-        }
+def main():
+    """Main loop handling MQTT messages."""
+    connect_mqtt()
+    while True:
+        try:
+            mqtt_client.check_msg()  # Process incoming messages
+            time.sleep(0.1)
+        except Exception as e:
+            print("MQTT error: {}. Reconnecting...".format(e))
+            time.sleep(5)
+            connect_mqtt()
 
-        uint8_t x = message[0] % 5;
-        uint8_t y = message[1] % 5;
-        uint32_t color = M5.dis.color444(message[2] >> 4, message[3] >> 4, message[4] >> 4);
-
-        data[x][y][0] = message[2];
-        data[x][y][1] = message[3];
-        data[x][y][2] = message[4];
-
-        M5.dis.drawpix(x + y * 5, color);
-        M5.dis.show();
-    } else if (strcmp(topic, CONNECT_TOPIC) == 0) {
-        sync();
-    } else if (strcmp(topic, UPDATE_TOPIC) == 0) {
-        update(message);
-    } else {
-        Serial.print("Unknown topic: ");
-        Serial.println(topic);
-    }
-}
-
-void reconnect() {
-    while (!mqttClient.connected()) {
-        Serial.print("Connecting to MQTT...");
-        if (mqttClient.connect(clientId.c_str())) {
-            Serial.println("Connected!");
-            mqttClient.subscribe(DRAW_TOPIC);
-            mqttClient.subscribe(CONNECT_TOPIC);
-            mqttClient.subscribe(UPDATE_TOPIC);
-            sync();
-        } else {
-            Serial.print("MQTT connection failed, rc=");
-            Serial.print(mqttClient.state());
-            Serial.println(". Retrying in 5 seconds...");
-            delay(5000);
-        }
-    }
-}
-
-void update(byte* message) {
-    String tagName = String((char*)message);
-    Serial.printf("Updating to version: %s\n", tagName.c_str());
-
-    t_httpUpdate_return ret = httpUpdate.update(wifiClient, "http://github.com/SteffiPeTaffy/draw/releases/download/" + tagName + "/firmware.bin");
-
-    switch (ret) {
-        case HTTP_UPDATE_FAILED:
-            Serial.printf("HTTP Update Failed (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
-            break;
-        case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("No updates found.");
-            break;
-        case HTTP_UPDATE_OK:
-            Serial.println("Update successful!");
-            break;
-    }
-}
-
-void loop() {
-    if (!mqttClient.connected()) {
-        reconnect();
-    }
-    mqttClient.loop();
-}
+# Run the main loop
+main()
