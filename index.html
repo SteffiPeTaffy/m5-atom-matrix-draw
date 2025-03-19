@@ -12,7 +12,7 @@
         body {
             margin: 0;
             padding: 0;
-            width: 100%;
+            width: 100vw;
             height: 100vh;
             display: flex;
             flex-direction: column;
@@ -22,30 +22,36 @@
             font-family: 'Press Start 2P', cursive;
             background-color: black;
             color: white;
+            overflow: hidden;
         }
 
         h1 {
-            font-size: 45px;
-            padding-top: 15px;
-            text-shadow: 3px 3px 5px hotpink;
-        }
-
-        h2 {
-            margin: 0.5em 0;
+            font-size: 20px;
+            margin: 10px 0;
+            text-shadow: 2px 2px 4px hotpink;
         }
 
         canvas {
-            margin: 20px 0;
             outline: 3px solid white;
-            width: 160mm;
-            height: 160mm;
+            width: 50vmin;
+            height: 50vmin;
             image-rendering: pixelated;
             background-color: black;
             cursor: crosshair;
+            margin-bottom: 10px;
         }
 
         form {
-            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="color"] {
+            width: 40px;
+            height: 40px;
+            border: none;
+            cursor: pointer;
         }
     </style>
 </head>
