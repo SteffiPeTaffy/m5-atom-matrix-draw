@@ -109,13 +109,32 @@
         }
 
         function onMessageArrived(message) {
-            console.log("Message arrived: " + toHexString(message.payloadBytes));
-            let x = message.payloadBytes[0] % 5;
-            let y = message.payloadBytes[1] % 5;
-            let color = '#' + toHexString(message.payloadBytes.slice(2, 5));
-            context.fillStyle = color;
-            context.fillRect(x, y, 1, 1);
+            console.log("Raw MQTT Message Arrived:", message.payloadString); // Debug raw input
+
+            try {
+                let data = JSON.parse(message.payloadString); // Parse JSON
+
+                if (!Array.isArray(data) || data.length !== 5) {
+                    console.error("Invalid JSON format. Expected [x, y, r, g, b]. Got:", data);
+                    return;
+                }
+
+                let [x, y, r, g, b] = data;
+                console.log(`Received Pixel Update → X:${x}, Y:${y}, RGB(${r}, ${g}, ${b})`);
+
+                // Ensure coordinates are within the 5x5 grid
+                x = x % 5;
+                y = y % 5;
+
+                let color = `rgb(${r}, ${g}, ${b})`;
+                context.fillStyle = color;
+                context.fillRect(x, y, 1, 1); // Update pixel on canvas
+
+            } catch (error) {
+                console.error("Error processing MQTT message:", error);
+            }
         }
+
 
         function toHexString(byteArray) {
             return Array.from(byteArray, byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
